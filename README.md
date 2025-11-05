@@ -4,8 +4,8 @@
 // =============================================
 
 const CONFIG = {
-  TOQAN_TOKEN: '',
-  SLACK_WEBHOOK: '',
+  TOQAN_TOKEN: 'sk_665304748b7774e226e1a66ef12aa30f8a7de027d28356a806487720b7872be19d025e97a5b853f959725b0e6995d5040f95ef697568660cd25dc267625b',
+  SLACK_WEBHOOK: 'https://hooks.slack.com/services/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',
   SHEET_ID: '1hEQ6886rbyTO2eaiapnSylWlsQVytOw7oTpfHnD3l_U',
   
   TOQAN_API: {
@@ -3091,18 +3091,7 @@ function agendarContinuo() {
   return configurarAgendamentoPersonalizado([9, 12, 15, 17]);
 }
 
-// =============================================
-// EXECUTAR APENAS O AGENDAMENTO
-// =============================================
 
-/**
- * FUNÇÃO PRINCIPAL - EXECUTAR ESTA PARA CONFIGURAR APENAS O AGENDAMENTO
- */
-function configurarApenasAgendamento() {
-  Logger.log('🚀 CONFIGURANDO APENAS O SISTEMA DE AGENDAMENTO');
-  return iniciarApenasAgendamento();
-}
-configurarApenasAgendamento()
 // =============================================
 // SISTEMA DE AGENDAMENTO CORRIGIDO
 // =============================================
@@ -7346,5 +7335,897 @@ function testeSistemaIntegrado() {
       success: false,
       error: error.toString()
     };
+  }
+}
+// =============================================
+// CORREÇÃO COMPLETA DO BACKLOG - DEBUG E SALVAMENTO
+// =============================================
+
+/**
+ * 🎯 FUNÇÃO CORRIGIDA - SALVAR TODAS AS ANÁLISES NO BACKLOG
+ * Com debug detalhado para identificar o problema
+ */
+function salvarTodasAnalisesNoBacklog(todasAnalises) {
+  Logger.log('📚 SALVANDO NO BACKLOG - INICIANDO...');
+  Logger.log(`📊 Recebidas ${todasAnalises.length} análises para salvar`);
+  
+  try {
+    // 1. CONFIGURAÇÕES DA PLANILHA
+    const PLANILHA_BACKLOG_ID = '1hEQ6886rbyTO2eaiapnSylWlsQVytOw7oTpfHnD3l_U'; // ID do backlog
+    Logger.log(`📋 Planilha Backlog ID: ${PLANILHA_BACKLOG_ID}`);
+    
+    const planilha = SpreadsheetApp.openById(PLANILHA_BACKLOG_ID);
+    const aba = planilha.getSheetByName('Backlog');
+    
+    if (!aba) {
+      throw new Error('Aba "Backlog" não encontrada. Verifique o nome da aba.');
+    }
+    
+    Logger.log('✅ Planilha e aba carregadas com sucesso');
+    
+    // 2. DEBUG DETALHADO DAS ANÁLISES
+    Logger.log('🔍 DEBUG - Estrutura das análises recebidas:');
+    if (todasAnalises.length > 0) {
+      const primeiraAnalise = todasAnalises[0];
+      Logger.log('📝 Primeira análise:');
+      Logger.log(`   - Tipo: ${typeof primeiraAnalise}`);
+      Logger.log(`   - Keys: ${Object.keys(primeiraAnalise).join(', ')}`);
+      Logger.log(`   - Título: ${primeiraAnalise.Titulo || 'N/A'}`);
+      Logger.log(`   - Fonte: ${primeiraAnalise.Fonte || 'N/A'}`);
+      Logger.log(`   - Aplicável: ${primeiraAnalise.Aplicavel_iFood || 'N/A'}`);
+    } else {
+      Logger.log('⚠️ Nenhuma análise recebida para salvar');
+      return {
+        total: 0,
+        salvos: 0,
+        aplicaveis: 0,
+        naoAplicaveis: 0,
+        erro: 'Nenhuma análise recebida'
+      };
+    }
+    
+    // 3. VERIFICAR DADOS EXISTENTES PARA EVITAR DUPLICATAS
+    const ultimaLinha = aba.getLastRow();
+    Logger.log(`📊 Última linha com dados: ${ultimaLinha}`);
+    
+    let dadosExistentes = [];
+    if (ultimaLinha > 1) {
+      dadosExistentes = aba.getRange(2, 1, ultimaLinha - 1, 15).getValues();
+      Logger.log(`📋 ${dadosExistentes.length} registros existentes no backlog`);
+    }
+    
+    // 4. PREPARAR NOVOS REGISTROS
+    const novosRegistros = [];
+    let duplicatas = 0;
+    let salvos = 0;
+    let errosPreparacao = 0;
+    
+    todasAnalises.forEach((analise, index) => {
+      try {
+        // Debug de cada análise
+        Logger.log(`   🔍 Processando análise ${index + 1}/${todasAnalises.length}`);
+        
+        if (!analise || typeof analise !== 'object') {
+          Logger.log(`     ⚠️ Análise ${index} inválida, pulando`);
+          errosPreparacao++;
+          return;
+        }
+        
+        // Criar ID único para o normativo
+        const idNormativo = gerarIdUnicoNormativo(analise);
+        Logger.log(`     📌 ID gerado: ${idNormativo}`);
+        
+        // Verificar se já existe no backlog
+        const jaExiste = dadosExistentes.some(linha => {
+          const idExistente = linha[1]; // Coluna B (ID)
+          return idExistente === idNormativo;
+        });
+        
+        if (jaExiste) {
+          Logger.log(`     ⚡ Duplicata ignorada: ${analise.Titulo || 'Sem título'}`);
+          duplicatas++;
+          return;
+        }
+        
+        // Preparar dados para salvar - CORRIGINDO A ESTRUTURA
+        const registro = [
+          new Date(), // A - Data de inclusão
+          idNormativo, // B - ID único
+          analise.Titulo || 'Sem título', // C - Título
+          analise.Fonte || 'Fonte não identificada', // D - Fonte
+          formatarData(analise.Data) || new Date(), // E - Data Normativo
+          analise.Link || '', // F - Link
+          analise['Resumo Conteúdo'] || analise.Resumo || '', // G - Resumo
+          analise['Análise Detalhada'] || analise.Analise || '', // H - Análise Detalhada
+          analise.Aplicavel_iFood || 'Não analisado', // I - Aplicável iFood
+          analise.Impacto_iFood || 'Não especificado', // J - Impacto
+          analise['Setores Afetados'] || analise.Setores || '', // K - Setores Afetados
+          analise['Ações Recomendadas'] || analise.Acoes || '', // L - Ações Recomendadas
+          analise.Prazo || '', // M - Prazo
+          analise.Prioridade || 'Média', // N - Prioridade
+          'Registrado' // O - Status
+        ];
+        
+        Logger.log(`     ✅ Preparado: "${analise.Titulo || 'Sem título'}"`);
+        novosRegistros.push(registro);
+        salvos++;
+        
+      } catch (erroAnalise) {
+        Logger.log(`     ❌ Erro na análise ${index}: ${erroAnalise}`);
+        errosPreparacao++;
+      }
+    });
+    
+    Logger.log(`📊 RESUMO PREPARAÇÃO: ${salvos} salvos, ${duplicatas} duplicatas, ${errosPreparacao} erros`);
+    
+    // 5. SALVAR NOVOS REGISTROS
+    if (novosRegistros.length > 0) {
+      Logger.log(`💾 Salvando ${novosRegistros.length} registros no backlog...`);
+      
+      try {
+        // Adicionar na próxima linha disponível
+        const linhaInicio = ultimaLinha + 1;
+        const numColunas = novosRegistros[0].length;
+        
+        Logger.log(`📝 Linha início: ${linhaInicio}, Colunas: ${numColunas}`);
+        
+        aba.getRange(linhaInicio, 1, novosRegistros.length, numColunas)
+          .setValues(novosRegistros);
+        
+        Logger.log(`✅ ${novosRegistros.length} registros salvos com sucesso`);
+        
+        // 6. ATUALIZAR FORMATAÇÃO
+        Logger.log('🎨 Aplicando formatação...');
+        try {
+          // Autoajustar colunas
+          aba.autoResizeColumns(1, numColunas);
+          
+          // Formatar data na coluna A
+          if (novosRegistros.length > 0) {
+            const rangeDatas = aba.getRange(linhaInicio, 1, novosRegistros.length, 1);
+            rangeDatas.setNumberFormat('dd/MM/yyyy HH:mm:ss');
+          }
+          
+          Logger.log('✅ Formatação aplicada');
+        } catch (erroFormatacao) {
+          Logger.log(`⚠️ Erro na formatação: ${erroFormatacao}`);
+        }
+        
+      } catch (erroSalvamento) {
+        Logger.log(`❌ ERRO AO SALVAR: ${erroSalvamento}`);
+        throw new Error(`Falha no salvamento: ${erroSalvamento}`);
+      }
+    } else {
+      Logger.log('📭 Nenhum novo registro para salvar no backlog');
+    }
+    
+    // 7. ESTATÍSTICAS FINAIS
+    const aplicaveis = todasAnalises.filter(a => a.Aplicavel_iFood === 'Sim').length;
+    const naoAplicaveis = todasAnalises.filter(a => a.Aplicavel_iFood === 'Não').length;
+    
+    Logger.log(`📊 ESTATÍSTICAS FINAIS: ${aplicaveis} aplicáveis, ${naoAplicaveis} não aplicáveis`);
+    
+    return {
+      total: todasAnalises.length,
+      salvos: salvos,
+      duplicatas: duplicatas,
+      erros: errosPreparacao,
+      aplicaveis: aplicaveis,
+      naoAplicaveis: naoAplicaveis
+    };
+    
+  } catch (error) {
+    Logger.log(`❌ ERRO GRAVE NO BACKLOG: ${error.toString()}`);
+    Logger.log(`🔍 Stack trace: ${error.stack}`);
+    
+    enviarSlackMensagem(
+      `❌ *ERRO NO BACKLOG*\n\n` +
+      `Erro: ${error.toString().substring(0, 150)}\n` +
+      `📊 Análises recebidas: ${todasAnalises.length}`
+    );
+    
+    return {
+      total: todasAnalises.length,
+      salvos: 0,
+      duplicatas: 0,
+      erros: todasAnalises.length,
+      aplicaveis: 0,
+      naoAplicaveis: 0,
+      error: error.toString()
+    };
+  }
+}
+
+/**
+ * 🔧 FUNÇÃO AUXILIAR - FORMATAR DATA
+ */
+function formatarData(data) {
+  if (!data) return new Date();
+  
+  try {
+    if (data instanceof Date) {
+      return data;
+    } else if (typeof data === 'string') {
+      // Tentar parse de data em formato string
+      const dataParse = new Date(data);
+      return isNaN(dataParse.getTime()) ? new Date() : dataParse;
+    } else {
+      return new Date();
+    }
+  } catch (e) {
+    return new Date();
+  }
+}
+
+/**
+ * 🔧 FUNÇÃO AUXILIAR - GERAR ID ÚNICO
+ */
+function gerarIdUnicoNormativo(analise) {
+  try {
+    const textoBase = `${analise.Titulo || ''}-${analise.Fonte || ''}-${analise.Data || ''}-${analise.Link || ''}`;
+    const hash = Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, textoBase)
+      .map(byte => (byte + 128).toString(16).padStart(2, '0'))
+      .join('')
+      .substring(0, 12);
+    return `NORM-${hash}`;
+  } catch (e) {
+    return `NORM-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+  }
+}
+
+// =============================================
+// FUNÇÕES DE DIAGNÓSTICO DO BACKLOG
+// =============================================
+
+/**
+ * 🔍 DIAGNOSTICAR BACKLOG COMPLETO
+ */
+function diagnosticarBacklogCompleto() {
+  Logger.log('🔍 INICIANDO DIAGNÓSTICO COMPLETO DO BACKLOG');
+  
+  const diagnostico = {
+    planilha: null,
+    aba: null,
+    estrutura: null,
+    dadosExistentes: null,
+    problemas: []
+  };
+  
+  try {
+    // 1. VERIFICAR PLANILHA
+    const PLANILHA_BACKLOG_ID = '1hEQ6886rbyTO2eaiapnSylWlsQVytOw7oTpfHnD3l_U';
+    diagnostico.planilha = SpreadsheetApp.openById(PLANILHA_BACKLOG_ID);
+    Logger.log('✅ Planilha encontrada: ' + diagnostico.planilha.getName());
+    
+    // 2. VERIFICAR ABA
+    diagnostico.aba = diagnostico.planilha.getSheetByName('Backlog');
+    if (!diagnostico.aba) {
+      diagnostico.problemas.push('Aba "Backlog" não encontrada');
+      Logger.log('❌ Aba Backlog não encontrada');
+    } else {
+      Logger.log('✅ Aba Backlog encontrada');
+      
+      // 3. VERIFICAR ESTRUTURA
+      const ultimaLinha = diagnostico.aba.getLastRow();
+      const ultimaColuna = diagnostico.aba.getLastColumn();
+      diagnostico.estrutura = {
+        ultimaLinha: ultimaLinha,
+        ultimaColuna: ultimaColuna,
+        intervalo: `${ultimaLinha}x${ultimaColuna}`
+      };
+      Logger.log(`📊 Estrutura: ${ultimaLinha} linhas, ${ultimaColuna} colunas`);
+      
+      // 4. VERIFICAR CABEÇALHOS
+      if (ultimaLinha > 0) {
+        const cabecalhos = diagnostico.aba.getRange(1, 1, 1, ultimaColuna).getValues()[0];
+        diagnostico.cabecalhos = cabecalhos;
+        Logger.log('📋 Cabeçalhos: ' + cabecalhos.join(' | '));
+      }
+      
+      // 5. VERIFICAR DADOS EXISTENTES
+      if (ultimaLinha > 1) {
+        diagnostico.dadosExistentes = diagnostico.aba.getRange(2, 1, ultimaLinha - 1, ultimaColuna).getValues();
+        Logger.log(`📝 ${diagnostico.dadosExistentes.length} registros existentes`);
+        
+        // Mostrar últimos 3 registros
+        const ultimosRegistros = diagnostico.dadosExistentes.slice(-3);
+        Logger.log('📄 Últimos 3 registros:');
+        ultimosRegistros.forEach((reg, idx) => {
+          Logger.log(`   ${idx + 1}. ${reg[1]} - ${reg[2]}`);
+        });
+      }
+    }
+    
+  } catch (error) {
+    diagnostico.problemas.push(`Erro geral: ${error.toString()}`);
+    Logger.log(`❌ Erro no diagnóstico: ${error}`);
+  }
+  
+  // ENVIAR RELATÓRIO
+  let mensagemSlack = `🔍 *DIAGNÓSTICO BACKLOG*\n\n`;
+  
+  if (diagnostico.problemas.length > 0) {
+    mensagemSlack += `❌ *PROBLEMAS ENCONTRADOS:*\n`;
+    diagnostico.problemas.forEach(problema => {
+      mensagemSlack += `• ${problema}\n`;
+    });
+  } else {
+    mensagemSlack += `✅ *TUDO OK*\n`;
+  }
+  
+  mensagemSlack += `\n📊 *ESTATÍSTICAS:*\n`;
+  mensagemSlack += `• Planilha: ${diagnostico.planilha ? diagnostico.planilha.getName() : 'Não encontrada'}\n`;
+  mensagemSlack += `• Aba Backlog: ${diagnostico.aba ? 'Encontrada' : 'Não encontrada'}\n`;
+  
+  if (diagnostico.estrutura) {
+    mensagemSlack += `• Linhas: ${diagnostico.estrutura.ultimaLinha}\n`;
+    mensagemSlack += `• Colunas: ${diagnostico.estrutura.ultimaColuna}\n`;
+    mensagemSlack += `• Registros: ${diagnostico.dadosExistentes ? diagnostico.dadosExistentes.length : 0}\n`;
+  }
+  
+  enviarSlackMensagem(mensagemSlack);
+  
+  return diagnostico;
+}
+
+/**
+ * 🧪 TESTE DE SALVAMENTO NO BACKLOG
+ */
+function testeSalvamentoBacklog() {
+  Logger.log('🧪 INICIANDO TESTE DE SALVAMENTO NO BACKLOG');
+  
+  // Criar dados de teste
+  const analisesTeste = [
+    {
+      Titulo: 'TESTE - Normativo de Teste 1',
+      Fonte: 'BACEN',
+      Data: new Date(),
+      Link: 'https://exemplo.com/teste1',
+      'Resumo Conteúdo': 'Resumo de teste 1',
+      'Análise Detalhada': 'Análise detalhada de teste 1',
+      Aplicavel_iFood: 'Sim',
+      Impacto_iFood: 'Alto',
+      'Setores Afetados': 'TI, Jurídico',
+      'Ações Recomendadas': 'Monitorar',
+      Prazo: '30 dias',
+      Prioridade: 'Alta'
+    },
+    {
+      Titulo: 'TESTE - Normativo de Teste 2',
+      Fonte: 'RFB',
+      Data: new Date(),
+      Link: 'https://exemplo.com/teste2',
+      'Resumo Conteúdo': 'Resumo de teste 2',
+      'Análise Detalhada': 'Análise detalhada de teste 2',
+      Aplicavel_iFood: 'Não',
+      Impacto_iFood: 'Baixo',
+      'Setores Afetados': 'Financeiro',
+      'Ações Recomendadas': 'Arquivar',
+      Prazo: '',
+      Prioridade: 'Baixa'
+    }
+  ];
+  
+  Logger.log(`📝 Criados ${analisesTeste.length} registros de teste`);
+  
+  try {
+    const resultado = salvarTodasAnalisesNoBacklog(analisesTeste);
+    
+    Logger.log('📊 RESULTADO DO TESTE:');
+    Logger.log(`   • Total processado: ${resultado.total}`);
+    Logger.log(`   • Salvos: ${resultado.salvos}`);
+    Logger.log(`   • Duplicatas: ${resultado.duplicatas}`);
+    Logger.log(`   • Erros: ${resultado.erros}`);
+    
+    enviarSlackMensagem(
+      `🧪 *TESTE BACKLOG*\n\n` +
+      `📝 Registros de teste: ${analisesTeste.length}\n` +
+      `✅ Salvos: ${resultado.salvos}\n` +
+      `⚡ Duplicatas: ${resultado.duplicatas}\n` +
+      `❌ Erros: ${resultado.erros}\n\n` +
+      `${resultado.salvos > 0 ? '🎯 BACKLOG FUNCIONANDO!' : '🔧 AJUSTES NECESSÁRIOS'}`
+    );
+    
+    return resultado;
+    
+  } catch (error) {
+    Logger.log(`❌ TESTE FALHOU: ${error}`);
+    enviarSlackMensagem(`❌ TESTE BACKLOG FALHOU: ${error.toString()}`);
+    return {
+      success: false,
+      error: error.toString()
+    };
+  }
+}
+
+// =============================================
+// EXECUTAR DIAGNÓSTICO E CORREÇÃO
+// =============================================
+
+/**
+ * 🚀 EXECUTAR CORREÇÃO COMPLETA DO BACKLOG
+ */
+function executarCorrecaoBacklog() {
+  Logger.log('🚀 INICIANDO CORREÇÃO COMPLETA DO BACKLOG');
+  
+  try {
+    // 1. Diagnóstico
+    Logger.log('1. Executando diagnóstico...');
+    const diagnostico = diagnosticarBacklogCompleto();
+    
+    Utilities.sleep(2000);
+    
+    // 2. Teste de salvamento
+    Logger.log('2. Testando salvamento...');
+    const teste = testeSalvamentoBacklog();
+    
+    // 3. Relatório final
+    const sucessoDiagnostico = diagnostico.problemas.length === 0;
+    const sucessoTeste = teste.salvos > 0;
+    
+    enviarSlackMensagem(
+      `🚀 *CORREÇÃO BACKLOG - RELATÓRIO FINAL*\n\n` +
+      `🔍 Diagnóstico: ${sucessoDiagnostico ? '✅' : '❌'}\n` +
+      `🧪 Teste salvamento: ${sucessoTeste ? '✅' : '❌'}\n` +
+      `📊 Registros de teste salvos: ${teste.salvos}\n\n` +
+      `${sucessoDiagnostico && sucessoTeste ? '🎯 BACKLOG CORRIGIDO!' : '🔧 AJUSTES AINDA NECESSÁRIOS'}`
+    );
+    
+    return {
+      diagnostico: diagnostico,
+      teste: teste,
+      sucesso: sucessoDiagnostico && sucessoTeste
+    };
+    
+  } catch (error) {
+    Logger.log(`❌ CORREÇÃO FALHOU: ${error}`);
+    enviarSlackMensagem(`❌ CORREÇÃO BACKLOG FALHOU: ${error.toString()}`);
+    return {
+      success: false,
+      error: error.toString()
+    };
+  }
+}
+/**
+ * 🚀 INICIAR SISTEMA - VERSÃO ROBUSTA E À PROVA DE ERROS
+ * Execute esta e PRONTO!
+ */
+function iniciarSistemaRobusto() {
+  Logger.log('🚀 INICIANDO SISTEMA - VERSÃO ROBUSTA');
+  
+  try {
+    // 1. ✅ CONFIGURAR AGENDAMENTOS
+    Logger.log('1. ⏰ Configurando agendamentos...');
+    
+    // Parar agendamentos existentes
+    let triggersRemovidos = 0;
+    try {
+      const triggers = ScriptApp.getProjectTriggers();
+      triggers.forEach(trigger => {
+        ScriptApp.deleteTrigger(trigger);
+        triggersRemovidos++;
+      });
+      Logger.log(`✅ ${triggersRemovidos} triggers antigos removidos`);
+    } catch (e) {
+      Logger.log(`⚠️ Erro ao remover triggers: ${e}`);
+    }
+    
+    // Criar novos agendamentos
+    const horarios = [9, 12, 17];
+    let triggersCriados = 0;
+    
+    horarios.forEach(hora => {
+      try {
+        ScriptApp.newTrigger('executarMonitoramentoCompleto')
+          .timeBased()
+          .atHour(hora)
+          .nearMinute(0)
+          .everyDays(1)
+          .inTimezone('America/Sao_Paulo')
+          .create();
+        triggersCriados++;
+        Logger.log(`✅ Agendado: ${hora}:00`);
+      } catch (e) {
+        Logger.log(`❌ Erro ao agendar ${hora}:00: ${e}`);
+      }
+    });
+    
+    Logger.log(`⏰ ${triggersCriados} agendamentos criados`);
+    
+    // 2. ✅ EXECUTAR PRIMEIRA ANÁLISE COM TRATAMENTO DE ERRO
+    Logger.log('2. 🔍 Executando primeira análise...');
+    let primeiraExecucao = {};
+    
+    try {
+      primeiraExecucao = executarMonitoramentoCompleto();
+      Logger.log('✅ Primeira análise executada com sucesso');
+    } catch (e) {
+      Logger.log(`⚠️ Erro na primeira análise: ${e}`);
+      primeiraExecucao = { success: false, error: e.toString() };
+    }
+    
+    // 3. ✅ PREPARAR DADOS PARA RELATÓRIO (COM VALIDAÇÃO)
+    const normativosOficiais = primeiraExecucao.normativosOficiais || [];
+    const fontesComplementares = primeiraExecucao.fontesComplementares || [];
+    const analisesToqan = primeiraExecucao.analisesToqan || [];
+    const backlog = primeiraExecucao.backlog || 0;
+    const agenda = primeiraExecucao.agenda || 0;
+    
+    const totalNormativos = normativosOficiais.length + fontesComplementares.length;
+    
+    // 4. ✅ RELATÓRIO FINAL
+    Logger.log('3. 📊 Gerando relatório final...');
+    
+    let mensagemSlack = `🚀 *SISTEMA INICIADO COM SUCESSO!*\n\n`;
+    
+    mensagemSlack += `✅ *CONFIGURAÇÃO COMPLETA*\n\n`;
+    mensagemSlack += `⏰ *AGENDAMENTOS:*\n`;
+    mensagemSlack += `• ${triggersCriados} triggers configurados\n`;
+    mensagemSlack += `• Horários: 9h, 12h, 17h\n`;
+    mensagemSlack += `• Execução automática ativada\n\n`;
+    
+    mensagemSlack += `🔍 *PRIMEIRA EXECUÇÃO:*\n`;
+    mensagemSlack += `• Normativos coletados: ${totalNormativos}\n`;
+    mensagemSlack += `• Análises processadas: ${analisesToqan.length}\n`;
+    mensagemSlack += `• Salvos no backlog: ${backlog}\n`;
+    mensagemSlack += `• Na agenda: ${agenda}\n\n`;
+    
+    if (primeiraExecucao.error) {
+      mensagemSlack += `⚠️ *OBSERVAÇÃO:*\n`;
+      mensagemSlack += `Primeira execução teve erro, mas os agendamentos estão configurados.\n`;
+      mensagemSlack += `Erro: ${primeiraExecucao.error.substring(0, 100)}\n\n`;
+    }
+    
+    mensagemSlack += `🎯 *PRÓXIMAS EXECUÇÕES AUTOMÁTICAS:*\n`;
+    mensagemSlack += `• 9:00 AM\n`;
+    mensagemSlack += `• 12:00 PM\n`;
+    mensagemSlack += `• 5:00 PM\n\n`;
+    
+    mensagemSlack += `⚠️ *NÃO EXECUTE MAIS NENHUMA FUNÇÃO MANUALMENTE*\n`;
+    mensagemSlack += `O sistema agora roda sozinho nos horários agendados!`;
+    
+    enviarSlackMensagem(mensagemSlack);
+    
+    Logger.log('🎉 SISTEMA INICIADO COM SUCESSO!');
+    
+    return {
+      success: true,
+      agendamentos: triggersCriados,
+      primeiraExecucao: primeiraExecucao,
+      status: 'SISTEMA_CONFIGURADO'
+    };
+    
+  } catch (error) {
+    Logger.log(`❌ ERRO GRAVE AO INICIAR SISTEMA: ${error.toString()}`);
+    
+    enviarSlackMensagem(
+      `❌ *FALHA CRÍTICA NA INICIALIZAÇÃO*\n\n` +
+      `Erro: ${error.toString().substring(0, 150)}\n\n` +
+      `🔧 Contate o suporte técnico.`
+    );
+    
+    return {
+      success: false,
+      error: error.toString()
+    };
+  }
+}
+
+/**
+ * 🎯 VERSÃO SUPER SIMPLES - SÓ OS AGENDAMENTOS
+ */
+function iniciarSistemaAgendamentosApenas() {
+  Logger.log('🎯 INICIANDO SÓ OS AGENDAMENTOS');
+  
+  try {
+    // Parar tudo
+    const triggers = ScriptApp.getProjectTriggers();
+    triggers.forEach(trigger => ScriptApp.deleteTrigger(trigger));
+    
+    // Criar novos
+    ScriptApp.newTrigger('executarMonitoramentoCompleto')
+      .timeBased().atHour(9).nearMinute(0).everyDays(1).create();
+      
+    ScriptApp.newTrigger('executarMonitoramentoCompleto')  
+      .timeBased().atHour(12).nearMinute(0).everyDays(1).create();
+      
+    ScriptApp.newTrigger('executarMonitoramentoCompleto')
+      .timeBased().atHour(17).nearMinute(0).everyDays(1).create();
+    
+    const novosTriggers = ScriptApp.getProjectTriggers();
+    
+    enviarSlackMensagem(
+      `🎯 *AGENDAMENTOS CONFIGURADOS!*\n\n` +
+      `✅ ${novosTriggers.length} triggers criados\n` +
+      `🕘 Horários: 9h, 12h, 17h\n\n` +
+      `⚠️ Execute executarAgora() manualmente para testar o sistema.`
+    );
+    
+    Logger.log('✅ Agendamentos configurados!');
+    return { success: true, triggers: novosTriggers.length };
+    
+  } catch (error) {
+    Logger.log(`❌ Erro: ${error}`);
+    enviarSlackMensagem(`❌ Falha nos agendamentos: ${error}`);
+    return { success: false, error: error.toString() };
+  }
+}
+/**
+ * 🔍 VERIFICAR AGENDA NORMATIVA E BACKLOG
+ */
+function verificarAgendaNormativa() {
+  Logger.log('🔍 VERIFICANDO AGENDA NORMATIVA E BACKLOG');
+  
+  try {
+    const PLANILHA_ID = '1hEQ6886rbyTO2eaiapnSylWlsQVytOw7oTpfHnD3l_U';
+    const planilha = SpreadsheetApp.openById(PLANILHA_ID);
+    
+    // 1. VERIFICAR BACKLOG
+    Logger.log('1. 📋 Verificando Backlog...');
+    const abaBacklog = planilha.getSheetByName('Backlog');
+    let statusBacklog = { existe: false, linhas: 0, estrutura: [] };
+    
+    if (abaBacklog) {
+      statusBacklog.existe = true;
+      statusBacklog.linhas = abaBacklog.getLastRow();
+      if (statusBacklog.linhas > 0) {
+        statusBacklog.estrutura = abaBacklog.getRange(1, 1, 1, abaBacklog.getLastColumn()).getValues()[0];
+      }
+      Logger.log(`   ✅ Backlog: ${statusBacklog.linhas} linhas`);
+      Logger.log(`   📝 Estrutura: ${statusBacklog.estrutura.join(', ')}`);
+    } else {
+      Logger.log('   ❌ Backlog: ABA NÃO ENCONTRADA');
+    }
+    
+    // 2. VERIFICAR AGENDA NORMATIVA
+    Logger.log('2. 📅 Verificando AgendaNormativa...');
+    const abaAgenda = planilha.getSheetByName('AgendaNormativa');
+    let statusAgenda = { existe: false, linhas: 0, estrutura: [] };
+    
+    if (abaAgenda) {
+      statusAgenda.existe = true;
+      statusAgenda.linhas = abaAgenda.getLastRow();
+      if (statusAgenda.linhas > 0) {
+        statusAgenda.estrutura = abaAgenda.getRange(1, 1, 1, abaAgenda.getLastColumn()).getValues()[0];
+      }
+      Logger.log(`   ✅ AgendaNormativa: ${statusAgenda.linhas} linhas`);
+      Logger.log(`   📝 Estrutura: ${statusAgenda.estrutura.join(', ')}`);
+    } else {
+      Logger.log('   ❌ AgendaNormativa: ABA NÃO ENCONTRADA');
+    }
+    
+    // 3. VERIFICAR SE HÁ DADOS NAS ABAS
+    Logger.log('3. 📊 Verificando dados...');
+    
+    let dadosBacklog = [];
+    let dadosAgenda = [];
+    
+    if (statusBacklog.existe && statusBacklog.linhas > 1) {
+      dadosBacklog = abaBacklog.getRange(2, 1, statusBacklog.linhas - 1, statusBacklog.estrutura.length).getValues();
+      Logger.log(`   📚 Backlog: ${dadosBacklog.length} registros`);
+    }
+    
+    if (statusAgenda.existe && statusAgenda.linhas > 1) {
+      dadosAgenda = abaAgenda.getRange(2, 1, statusAgenda.linhas - 1, statusAgenda.estrutura.length).getValues();
+      Logger.log(`   📅 AgendaNormativa: ${dadosAgenda.length} registros`);
+    }
+    
+    // 4. VERIFICAR SE AS NORMAS APLICÁVEIS ESTÃO NA AGENDA
+    Logger.log('4. 🔍 Verificando se normas aplicáveis estão na Agenda...');
+    
+    let normasAplicaveisNoBacklog = 0;
+    let normasAplicaveisNaAgenda = 0;
+    
+    // Contar aplicáveis no backlog
+    if (dadosBacklog.length > 0) {
+      const indiceAplicavel = statusBacklog.estrutura.indexOf('Aplicavel_iFood');
+      if (indiceAplicavel !== -1) {
+        normasAplicaveisNoBacklog = dadosBacklog.filter(linha => 
+          linha[indiceAplicavel] === 'Sim' || linha[indiceAplicavel] === true
+        ).length;
+      }
+    }
+    
+    // Contar total na agenda (todos devem ser aplicáveis)
+    normasAplicaveisNaAgenda = dadosAgenda.length;
+    
+    Logger.log(`   📈 Estatísticas:`);
+    Logger.log(`      • Backlog total: ${dadosBacklog.length} registros`);
+    Logger.log(`      • Backlog aplicáveis: ${normasAplicaveisNoBacklog}`);
+    Logger.log(`      • AgendaNormativa: ${normasAplicaveisNaAgenda} registros`);
+    
+    // 5. RELATÓRIO FINAL
+    const problema = normasAplicaveisNoBacklog > normasAplicaveisNaAgenda;
+    
+    let mensagemSlack = `🔍 *VERIFICAÇÃO AGENDA NORMATIVA*\n\n`;
+    
+    mensagemSlack += `📋 *BACKLOG:*\n`;
+    mensagemSlack += `• Status: ${statusBacklog.existe ? '✅' : '❌'}\n`;
+    mensagemSlack += `• Registros: ${dadosBacklog.length}\n`;
+    mensagemSlack += `• Aplicáveis: ${normasAplicaveisNoBacklog}\n\n`;
+    
+    mensagemSlack += `📅 *AGENDA NORMATIVA:*\n`;
+    mensagemSlack += `• Status: ${statusAgenda.existe ? '✅' : '❌'}\n`;
+    mensagemSlack += `• Registros: ${normasAplicaveisNaAgenda}\n\n`;
+    
+    if (problema) {
+      mensagemSlack += `⚠️ *PROBLEMA IDENTIFICADO:*\n`;
+      mensagemSlack += `Existem ${normasAplicaveisNoBacklog - normasAplicaveisNaAgenda} normas aplicáveis no Backlog que não estão na AgendaNormativa!\n\n`;
+      mensagemSlack += `🔧 *SOLUÇÃO:*\n`;
+      mensagemSlack += `Execute corrigirAgendaNormativa() para sincronizar os dados.`;
+    } else {
+      mensagemSlack += `✅ *TUDO OK!*\n`;
+      mensagemSlack += `Todas as normas aplicáveis estão na AgendaNormativa.`;
+    }
+    
+    enviarSlackMensagem(mensagemSlack);
+    
+    return {
+      backlog: statusBacklog,
+      agenda: statusAgenda,
+      estatisticas: {
+        backlogTotal: dadosBacklog.length,
+        backlogAplicaveis: normasAplicaveisNoBacklog,
+        agendaTotal: normasAplicaveisNaAgenda,
+        problema: problema,
+        diferenca: normasAplicaveisNoBacklog - normasAplicaveisNaAgenda
+      }
+    };
+    
+  } catch (error) {
+    Logger.log(`❌ ERRO NA VERIFICAÇÃO: ${error.toString()}`);
+    enviarSlackMensagem(`❌ ERRO NA VERIFICAÇÃO: ${error.toString()}`);
+    return { error: error.toString() };
+  }
+}
+
+/**
+ * 🔧 CORRIGIR AGENDA NORMATIVA
+ */
+function corrigirAgendaNormativa() {
+  Logger.log('🔧 CORRIGINDO AGENDA NORMATIVA');
+  
+  try {
+    const PLANILHA_ID = '1hEQ6886rbyTO2eaiapnSylWlsQVytOw7oTpfHnD3l_U';
+    const planilha = SpreadsheetApp.openById(PLANILHA_ID);
+    
+    // 1. OBTER DADOS DO BACKLOG
+    const abaBacklog = planilha.getSheetByName('Backlog');
+    if (!abaBacklog) {
+      throw new Error('Aba Backlog não encontrada');
+    }
+    
+    const ultimaLinhaBacklog = abaBacklog.getLastRow();
+    if (ultimaLinhaBacklog <= 1) {
+      Logger.log('⚠️ Backlog vazio, nada para corrigir');
+      enviarSlackMensagem('⚠️ Backlog vazio - nenhuma correção necessária');
+      return { success: true, correcoes: 0 };
+    }
+    
+    // Obter estrutura do backlog
+    const cabecalhosBacklog = abaBacklog.getRange(1, 1, 1, abaBacklog.getLastColumn()).getValues()[0];
+    const dadosBacklog = abaBacklog.getRange(2, 1, ultimaLinhaBacklog - 1, cabecalhosBacklog.length).getValues();
+    
+    // Encontrar índice da coluna Aplicavel_iFood
+    const indiceAplicavel = cabecalhosBacklog.indexOf('Aplicavel_iFood');
+    if (indiceAplicavel === -1) {
+      throw new Error('Coluna Aplicavel_iFood não encontrada no Backlog');
+    }
+    
+    // Filtrar apenas aplicáveis
+    const normasAplicaveis = dadosBacklog.filter(linha => 
+      linha[indiceAplicavel] === 'Sim' || linha[indiceAplicavel] === true
+    );
+    
+    Logger.log(`📊 Encontradas ${normasAplicaveis.length} normas aplicáveis no Backlog`);
+    
+    // 2. PREPARAR AGENDA NORMATIVA
+    let abaAgenda = planilha.getSheetByName('AgendaNormativa');
+    if (!abaAgenda) {
+      Logger.log('📝 Criando nova aba AgendaNormativa...');
+      abaAgenda = planilha.insertSheet('AgendaNormativa');
+      
+      // Cabeçalhos para AgendaNormativa
+      const cabecalhosAgenda = [
+        'Data Inclusão', 'ID', 'Título', 'Fonte', 'Data Normativo', 'Link',
+        'Resumo', 'Análise Detalhada', 'Impacto', 'Setores Afetados', 
+        'Ações Recomendadas', 'Prazo', 'Prioridade', 'Status', 'Responsável'
+      ];
+      
+      abaAgenda.getRange(1, 1, 1, cabecalhosAgenda.length).setValues([cabecalhosAgenda]);
+      abaAgenda.getRange(1, 1, 1, cabecalhosAgenda.length).setFontWeight('bold');
+      abaAgenda.setFrozenRows(1);
+      abaAgenda.autoResizeColumns(1, cabecalhosAgenda.length);
+    }
+    
+    // 3. VERIFICAR QUAIS JÁ EXISTEM NA AGENDA
+    const ultimaLinhaAgenda = abaAgenda.getLastRow();
+    let dadosExistentesAgenda = [];
+    
+    if (ultimaLinhaAgenda > 1) {
+      dadosExistentesAgenda = abaAgenda.getRange(2, 1, ultimaLinhaAgenda - 1, abaAgenda.getLastColumn()).getValues();
+    }
+    
+    // 4. PREPARAR NOVOS REGISTROS PARA AGENDA
+    const novosRegistros = [];
+    const idsExistentes = new Set(dadosExistentesAgenda.map(linha => linha[1])); // ID na coluna B
+    
+    normasAplicaveis.forEach((norma, index) => {
+      try {
+        // Criar ID único (usando dados da norma)
+        const idNormativo = `NORM-${Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, 
+          `${norma[2]}-${norma[3]}-${norma[4]}`) // Título + Fonte + Número
+          .map(byte => (byte + 128).toString(16).padStart(2, '0'))
+          .join('')
+          .substring(0, 12)}`;
+        
+        // Verificar se já existe na agenda
+        if (idsExistentes.has(idNormativo)) {
+          return; // Já existe, pular
+        }
+        
+        // Mapear dados do backlog para a agenda
+        const registroAgenda = [
+          new Date(), // Data Inclusão
+          idNormativo, // ID
+          norma[2] || 'Sem título', // Título (assumindo coluna 2)
+          norma[3] || 'Fonte não identificada', // Fonte (assumindo coluna 3)
+          norma[5] || new Date(), // Data Normativo (assumindo coluna 5)
+          norma[6] || '', // Link (assumindo coluna 6)
+          norma[7] || '', // Resumo (assumindo coluna 7)
+          norma[8] || '', // Análise Detalhada (assumindo coluna 8)
+          'Alto', // Impacto (padrão)
+          norma[9] || '', // Setores Afetados (assumindo coluna 9)
+          'Analisar impacto', // Ações Recomendadas (padrão)
+          '30 dias', // Prazo (padrão)
+          'Alta', // Prioridade (padrão)
+          'Pendente', // Status (padrão)
+          '' // Responsável (vazio)
+        ];
+        
+        novosRegistros.push(registroAgenda);
+        Logger.log(`   ✅ Preparado: ${norma[2] || 'Sem título'}`);
+        
+      } catch (erroNorma) {
+        Logger.log(`   ❌ Erro na norma ${index}: ${erroNorma}`);
+      }
+    });
+    
+    // 5. SALVAR NA AGENDA
+    let registrosSalvos = 0;
+    
+    if (novosRegistros.length > 0) {
+      const linhaInicio = ultimaLinhaAgenda + 1;
+      abaAgenda.getRange(linhaInicio, 1, novosRegistros.length, novosRegistros[0].length)
+        .setValues(novosRegistros);
+      
+      registrosSalvos = novosRegistros.length;
+      Logger.log(`✅ ${registrosSalvos} novos registros salvos na AgendaNormativa`);
+      
+      // Atualizar formatação
+      abaAgenda.autoResizeColumns(1, novosRegistros[0].length);
+    }
+    
+    // 6. RELATÓRIO FINAL
+    enviarSlackMensagem(
+      `🔧 *CORREÇÃO AGENDA NORMATIVA - CONCLUÍDA*\n\n` +
+      `📊 Estatísticas:\n` +
+      `• Normas aplicáveis no Backlog: ${normasAplicaveis.length}\n` +
+      `• Novos registros na Agenda: ${registrosSalvos}\n` +
+      `• Já existiam: ${normasAplicaveis.length - registrosSalvos}\n\n` +
+      `${registrosSalvos > 0 ? '✅ DADOS SINCRONIZADOS!' : '⚠️ NENHUM NOVO REGISTRO'}`
+    );
+    
+    return {
+      success: true,
+      normasAplicaveis: normasAplicaveis.length,
+      registrosSalvos: registrosSalvos,
+      jaExistentes: normasAplicaveis.length - registrosSalvos
+    };
+    
+  } catch (error) {
+    Logger.log(`❌ ERRO NA CORREÇÃO: ${error.toString()}`);
+    enviarSlackMensagem(`❌ ERRO NA CORREÇÃO: ${error.toString()}`);
+    return { success: false, error: error.toString() };
   }
 }
